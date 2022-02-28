@@ -136,7 +136,7 @@ func extract(gzipStream io.Reader) error {
 
 func override() error {
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "../encode.go", nil, parser.ParseComments)
+	f, err := parser.ParseFile(fset, "./encode.go", nil, parser.ParseComments)
 	if err != nil {
 		return fmt.Errorf("Failed to parse file: %w", err)
 	}
@@ -178,7 +178,7 @@ func override() error {
 	if err != nil {
 		return fmt.Errorf("Failed node convert: %w", err)
 	}
-	nf, err := os.Create("../encode.go")
+	nf, err := os.Create("./encode.go")
 	if err != nil {
 		return fmt.Errorf("Failed open file: %w", err)
 	}

@@ -1,4 +1,4 @@
-module github.com/0delta/fjson
+module github.com/0Delta/fjson
 
 go 1.17
 

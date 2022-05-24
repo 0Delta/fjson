@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -14,7 +15,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
@@ -23,42 +26,78 @@ import (
 func main() {
 	log.Println("generate...")
 
-	srcfname := "_gosrc.tar.gz"
-	err := GetSrc(srcfname)
+	govers, err := GetGoVersions()
 	if err != nil {
 		log.Fatal(err)
 		return
+	}
+	baseWd, err := os.Getwd()
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
+
+	for idx, gover := range govers {
+		err := os.Chdir(baseWd)
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+		log.Printf("%d/%d - %s", idx+1, len(govers), gover)
+		err = _main(gover)
+		if err != nil {
+			log.Printf("generate failed - %s", err.Error())
+		}
+	}
+}
+
+var srcfname = "_gosrc.tar.gz"
+
+func _main(gover string) error {
+	goverNum := strings.TrimLeft(gover, "go")
+	_ = os.RemoveAll(goverNum)
+	err := os.Mkdir(goverNum, 0755)
+	if err != nil {
+		return err
+	}
+	err = os.Chdir(goverNum)
+	if err != nil {
+		return err
+	}
+	err = GetSrc(srcfname, gover)
+	if err != nil {
+		return err
 	}
 	srcf, err := os.Open(srcfname)
 	if err != nil {
-		log.Fatal(err)
-		return
+		return err
 	}
+	defer func() {
+		nerr := os.Remove(srcfname)
+		if nerr != nil {
+			err = fmt.Errorf("%s :%w", nerr.Error(), err)
+		}
+	}()
 	err = extract(srcf)
 	if err != nil {
-		log.Fatal(err)
-		return
+		return err
 	}
 	err = srcf.Close()
 	if err != nil {
-		log.Fatal(err)
-		return
+		return err
 	}
-	err = os.Remove(srcfname)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	err = override()
 	if err != nil {
-		log.Fatal(err)
-		return
+		return err
 	}
-
+	return nil
 }
 
-func GetSrc(fname string) error {
-	url := "https://go.dev/dl/" + runtime.Version() + ".src.tar.gz"
+func GetSrc(fname string, version string) error {
+	if version == "" {
+		version = runtime.Version()
+	}
+	url := "https://go.dev/dl/" + version + ".src.tar.gz"
 	resp, err := http.Get(url)
 	if err != nil {
 		return err
@@ -87,6 +126,56 @@ func GetSrc(fname string) error {
 	return nil
 }
 
+type GithubTagsApiResponse struct {
+	Name       string `json:"name"`
+	ZipballURL string `json:"zipball_url"`
+	TarballURL string `json:"tarball_url"`
+	Commit     struct {
+		Sha string `json:"sha"`
+		URL string `json:"url"`
+	} `json:"commit"`
+	NodeID string `json:"node_id"`
+}
+
+func GetGoVersions() ([]string, error) {
+	regexGoReleaseTag := regexp.MustCompile(`^go[0-9]+(\.[0-9]+)?$`)
+	ret := []string{}
+	for p := 0; ; p++ {
+		url := "https://api.github.com/repos/golang/go/tags?per_page=100&page=" + strconv.Itoa(p)
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer  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")
+		resp, err := new(http.Client).Do(req)
+		if err != nil {
+			return nil, err
+		}
+
+		defer resp.Body.Close()
+		byteArray, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+
+		var sresp []GithubTagsApiResponse
+		err = json.Unmarshal(byteArray, &sresp)
+		if err != nil {
+			fmt.Println(string(byteArray))
+			return nil, err
+		}
+		if len(sresp) < 1 {
+			break
+		}
+		for _, sr := range sresp {
+			if regexGoReleaseTag.Match([]byte(sr.Name)) {
+				ret = append(ret, sr.Name)
+			}
+		}
+	}
+	return ret, nil
+}
+
 func extract(gzipStream io.Reader) error {
 	uncompressedStream, err := gzip.NewReader(gzipStream)
 	if err != nil {
@@ -104,11 +193,19 @@ func extract(gzipStream io.Reader) error {
 		}
 
 		// extract json package
-		if !strings.HasPrefix(header.Name, "go/src/encoding/json/") {
-			continue
-		}
-		name := strings.TrimPrefix(header.Name, "go/src/encoding/json/")
-		if name == "" {
+		name := ""
+		switch {
+		case strings.HasPrefix(header.Name, "go/src/encoding/json/"):
+			name = strings.TrimPrefix(header.Name, "go/src/encoding/json/")
+			if name == "" {
+				continue
+			}
+		case strings.HasPrefix(header.Name, "go/src/internal/testenv"):
+			name = strings.TrimPrefix(header.Name, "go/src/")
+			if name == "internal/testenv" {
+				continue
+			}
+		default:
 			continue
 		}
 		name = "./" + name
@@ -156,15 +253,28 @@ func override() error {
 				if s.X.(*ast.Ident).Obj.Decl.(*ast.Field).Type.(*ast.StarExpr).X.(*ast.Ident).Name == "encodeState" {
 					fmt.Printf("%d : %s %#v\n", l, v.Fun, v.Args)
 					v.Fun.(*ast.SelectorExpr).Sel = &ast.Ident{Name: "WriteString"}
-					v.Args[0] = &ast.CallExpr{
-						Fun: &ast.SelectorExpr{
-							X: &ast.ParenExpr{
-								X: v.Args[0],
+					v.Args[0] =
+						&ast.CallExpr{
+							Fun: &ast.SelectorExpr{
+								X:   &ast.Ident{Name: "fmt"},
+								Sel: &ast.Ident{Name: "Sprintf"},
 							},
-							Sel: &ast.Ident{Name: "Error"},
-						},
-						Args: []ast.Expr{},
-					}
+							Args: []ast.Expr{
+								&ast.BasicLit{
+									Kind:  token.STRING,
+									Value: `"\"%s\""`,
+								},
+								&ast.CallExpr{
+									Fun: &ast.SelectorExpr{
+										X: &ast.ParenExpr{
+											X: v.Args[0],
+										},
+										Sel: &ast.Ident{Name: "Error"},
+									},
+									Args: []ast.Expr{},
+								},
+							},
+						}
 					cr.Replace(v)
 				}
 			}

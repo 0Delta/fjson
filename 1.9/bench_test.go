@@ -1,13 +1,3 @@
-// Copyright 2011 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
-// Large data benchmark.
-// The JSON data is a summary of agl's changes in the
-// go, webkit, and chromium open source projects.
-// We benchmark converting between the JSON form
-// and in-memory data structures.
-
 package json
 
 import (
@@ -23,15 +13,24 @@ type codeResponse struct {
 	Tree     *codeNode `json:"tree"`
 	Username string    `json:"username"`
 }
-
 type codeNode struct {
-	Name     string      `json:"name"`
-	Kids     []*codeNode `json:"kids"`
-	CLWeight float64     `json:"cl_weight"`
-	Touches  int         `json:"touches"`
-	MinT     int64       `json:"min_t"`
-	MaxT     int64       `json:"max_t"`
-	MeanT    int64       `json:"mean_t"`
+	Name string `json:"name"`
+	Kids []*// Copyright 2011 The Go Authors. All rights reserved.
+	// Use of this source code is governed by a BSD-style
+	// license that can be found in the LICENSE file.
+	// Large data benchmark.
+	// The JSON data is a summary of agl's changes in the
+	// go, webkit, and chromium open source projects.
+	// We benchmark converting between the JSON form
+	// and in-memory data structures.
+	// hide EOF
+	// TODO(bcmills): Is there a missing b.SetBytes here?
+	codeNode `json:"kids"`
+	CLWeight float64 `json:"cl_weight"`
+	Touches  int     `json:"touches"`
+	MinT     int64   `json:"min_t"`
+	MaxT     int64   `json:"max_t"`
+	MeanT    int64   `json:"mean_t"`
 }
 
 var codeJSON []byte
@@ -51,17 +50,13 @@ func codeInit() {
 	if err != nil {
 		panic(err)
 	}
-
 	codeJSON = data
-
 	if err := Unmarshal(codeJSON, &codeStruct); err != nil {
 		panic("unmarshal code.json: " + err.Error())
 	}
-
 	if data, err = Marshal(&codeStruct); err != nil {
 		panic("marshal code.json: " + err.Error())
 	}
-
 	if !bytes.Equal(data, codeJSON) {
 		println("different lengths", len(data), len(codeJSON))
 		for i := 0; i < len(data) && i < len(codeJSON); i++ {
@@ -75,7 +70,6 @@ func codeInit() {
 		panic("re-marshal code.json: different result")
 	}
 }
-
 func BenchmarkCodeEncoder(b *testing.B) {
 	if codeJSON == nil {
 		b.StopTimer()
@@ -92,7 +86,6 @@ func BenchmarkCodeEncoder(b *testing.B) {
 	})
 	b.SetBytes(int64(len(codeJSON)))
 }
-
 func BenchmarkCodeMarshal(b *testing.B) {
 	if codeJSON == nil {
 		b.StopTimer()
@@ -108,7 +101,6 @@ func BenchmarkCodeMarshal(b *testing.B) {
 	})
 	b.SetBytes(int64(len(codeJSON)))
 }
-
 func BenchmarkCodeDecoder(b *testing.B) {
 	if codeJSON == nil {
 		b.StopTimer()
@@ -121,7 +113,6 @@ func BenchmarkCodeDecoder(b *testing.B) {
 		var r codeResponse
 		for pb.Next() {
 			buf.Write(codeJSON)
-			// hide EOF
 			buf.WriteByte('\n')
 			buf.WriteByte('\n')
 			buf.WriteByte('\n')
@@ -132,7 +123,6 @@ func BenchmarkCodeDecoder(b *testing.B) {
 	})
 	b.SetBytes(int64(len(codeJSON)))
 }
-
 func BenchmarkDecoderStream(b *testing.B) {
 	b.StopTimer()
 	var buf bytes.Buffer
@@ -154,7 +144,6 @@ func BenchmarkDecoderStream(b *testing.B) {
 		}
 	}
 }
-
 func BenchmarkCodeUnmarshal(b *testing.B) {
 	if codeJSON == nil {
 		b.StopTimer()
@@ -171,7 +160,6 @@ func BenchmarkCodeUnmarshal(b *testing.B) {
 	})
 	b.SetBytes(int64(len(codeJSON)))
 }
-
 func BenchmarkCodeUnmarshalReuse(b *testing.B) {
 	if codeJSON == nil {
 		b.StopTimer()
@@ -186,9 +174,7 @@ func BenchmarkCodeUnmarshalReuse(b *testing.B) {
 			}
 		}
 	})
-	// TODO(bcmills): Is there a missing b.SetBytes here?
 }
-
 func BenchmarkUnmarshalString(b *testing.B) {
 	data := []byte(`"hello, world"`)
 	b.RunParallel(func(pb *testing.PB) {
@@ -200,7 +186,6 @@ func BenchmarkUnmarshalString(b *testing.B) {
 		}
 	})
 }
-
 func BenchmarkUnmarshalFloat64(b *testing.B) {
 	data := []byte(`3.14`)
 	b.RunParallel(func(pb *testing.PB) {
@@ -212,7 +197,6 @@ func BenchmarkUnmarshalFloat64(b *testing.B) {
 		}
 	})
 }
-
 func BenchmarkUnmarshalInt64(b *testing.B) {
 	data := []byte(`3`)
 	b.RunParallel(func(pb *testing.PB) {
@@ -224,7 +208,6 @@ func BenchmarkUnmarshalInt64(b *testing.B) {
 		}
 	})
 }
-
 func BenchmarkIssue10335(b *testing.B) {
 	b.ReportAllocs()
 	j := []byte(`{"a":{ }}`)
@@ -237,7 +220,6 @@ func BenchmarkIssue10335(b *testing.B) {
 		}
 	})
 }
-
 func BenchmarkUnmapped(b *testing.B) {
 	b.ReportAllocs()
 	j := []byte(`{"s": "hello", "y": 2, "o": {"x": 0}, "a": [1, 99, {"x": 1}]}`)

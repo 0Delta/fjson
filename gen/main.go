@@ -23,10 +23,14 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 )
 
+var obsolete = []string{
+	"1", "1.1", "1.2", "1.3",
+}
+
 func main() {
 	log.Println("generate...")
 
-	govers, err := GetGoVersions()
+	goversRaw, err := GetGoVersions()
 	if err != nil {
 		log.Fatal(err)
 		return
@@ -35,6 +39,20 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 		return
+	}
+
+	// filtering obsolete versions
+	var govers []string
+	for _, gv := range goversRaw {
+		f := true
+		for _, o := range obsolete {
+			if gv == o {
+				f = false
+			}
+		}
+		if f {
+			govers = append(govers, gv)
+		}
 	}
 
 	for idx, gover := range govers {
@@ -55,8 +73,11 @@ var srcfname = "_gosrc.tar.gz"
 
 func _main(gover string) error {
 	goverNum := strings.TrimLeft(gover, "go")
-	_ = os.RemoveAll(goverNum)
-	err := os.Mkdir(goverNum, 0755)
+	err := os.RemoveAll(goverNum)
+	if err != nil {
+		return err
+	}
+	err = os.Mkdir(goverNum, 0755)
 	if err != nil {
 		return err
 	}
@@ -146,7 +167,10 @@ func GetGoVersions() ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		req.Header.Set("Authorization", "Bearer  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")
+		ght := os.Getenv("GITHUB_TOKEN")
+		if ght != "" {
+			req.Header.Set("Authorization", "Bearer "+ght)
+		}
 		resp, err := new(http.Client).Do(req)
 		if err != nil {
 			return nil, err
@@ -203,6 +227,7 @@ func extract(gzipStream io.Reader) error {
 		case strings.HasPrefix(header.Name, "go/src/internal/testenv"):
 			name = strings.TrimPrefix(header.Name, "go/src/")
 			if name == "internal/testenv" {
+				strings.TrimLeft(name, "internal/")
 				continue
 			}
 		default:
@@ -232,6 +257,7 @@ func extract(gzipStream io.Reader) error {
 }
 
 func override() error {
+	// encode.go
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "./encode.go", nil, parser.ParseComments)
 	if err != nil {
@@ -289,6 +315,38 @@ func override() error {
 		return fmt.Errorf("Failed node convert: %w", err)
 	}
 	nf, err := os.Create("./encode.go")
+	if err != nil {
+		return fmt.Errorf("Failed open file: %w", err)
+	}
+	_, err = nf.Write(buf.Bytes())
+	if err != nil {
+		return fmt.Errorf("Failed write file: %w", err)
+	}
+	err = nf.Close()
+	if err != nil {
+		return fmt.Errorf("Failed close file: %w", err)
+	}
+
+	// bench_test.go
+	fset = token.NewFileSet()
+	f, err = parser.ParseFile(fset, "./bench_test.go", nil, parser.ParseComments)
+	if err != nil {
+		return fmt.Errorf("Failed to parse file: %w", err)
+	}
+
+	for i := range f.Imports {
+		if f.Imports[i].Path.Value == "\"internal/testenv\"" {
+			f.Imports[i].Path.Value = "\"testenv\""
+		}
+	}
+
+	// write
+	buf = new(bytes.Buffer)
+	err = format.Node(buf, token.NewFileSet(), f)
+	if err != nil {
+		return fmt.Errorf("Failed node convert: %w", err)
+	}
+	nf, err = os.Create("./bench_test.go")
 	if err != nil {
 		return fmt.Errorf("Failed open file: %w", err)
 	}
